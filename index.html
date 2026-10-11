@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="플래너">
@@ -15,9 +15,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@500;700&display=swap">
 <style>
-/* Layout: one paper page that fits the tablet screen (no scrolling, so a passive stylus can write anywhere).
-   Header (date + progress) → tool bar → grid of six sections; each section is ruled paper with a
-   check-mark gutter on the left and a handwriting canvas on the right. */
+/* Layout: one paper page per day. On a portrait tablet it fills the screen; on a phone the sections stack
+   and the page scrolls. Sticky bar (date + progress, tool bar) → grid of six sections; each section is
+   ruled paper with a check-mark gutter, a handwriting canvas and a row of text inputs (keyboard mode).
+   Three input modes: 이동 (scroll/zoom), 필기 (pen; two fingers still pinch-zoom), 키보드 (type on lines). */
 :root{
   color-scheme:light;
   --paper:#f4f1ea; --card:#fffdf9; --ink:#1f2421; --muted:#8b8579; --faint:#bdb6a8;
@@ -29,7 +30,7 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+html,body{margin:0;overscroll-behavior-y:none}
 body{
   background:var(--paper);color:var(--ink);font-family:var(--f-sans);font-size:14px;line-height:1.4;
   -webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;
@@ -40,10 +41,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .sr{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
 
 .app{
-  height:100vh;height:100dvh;display:grid;grid-template-rows:auto auto 1fr;
-  padding:calc(env(safe-area-inset-top,0px) + 12px) 14px calc(env(safe-area-inset-bottom,0px) + 14px);
+  min-height:100vh;min-height:100svh;display:grid;grid-template-rows:auto 1fr;
+  padding:0 14px calc(env(safe-area-inset-bottom,0px) + 14px);
   gap:10px;max-width:1100px;margin:0 auto;
 }
+.bar{position:sticky;top:0;z-index:5;display:grid;gap:10px;background:var(--paper);
+  padding:calc(env(safe-area-inset-top,0px) + 12px) 0 2px}
 
 /* ---------- header ---------- */
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -69,7 +72,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .prog-t span{font-size:10px;letter-spacing:.14em;color:var(--muted)}
 
 /* ---------- tool bar ---------- */
-.tools{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px 6px;box-shadow:0 1px 0 rgba(31,36,33,.03)}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:5px 6px;box-shadow:0 1px 0 rgba(31,36,33,.03)}
 .tgroup{display:flex;align-items:center;gap:2px}
 .tsep{width:1px;height:24px;background:var(--line);margin:0 4px;flex:none}
 .flex{flex:1}
@@ -81,6 +84,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .sw[aria-pressed="true"]{background:none}
 .sw[aria-pressed="true"] i{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--c)}
 .sz i{width:var(--d);height:var(--d);border-radius:50%;background:currentColor}
+.modes{display:flex;gap:2px;background:var(--paper);border-radius:12px;padding:3px}
+.modes .tool{width:38px;height:36px;border-radius:9px;color:var(--muted)}
+.modes .tool[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(31,36,33,.14)}
+.brk{display:none}
+.menu-m{display:none}
+body.m-key .pen-only,body.m-move .pen-only{opacity:.4}
 .mode-chip{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap}
 .mode-chip b{color:var(--accent);font-weight:500}
 
@@ -95,15 +104,35 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   .grid{grid-template-columns:1fr 1fr 1fr;grid-template-rows:auto 1fr 1fr;
     grid-template-areas:"wake wake wake" "goal today important" "morning today tomorrow"}
 }
-@media (max-width:520px){
-  .app{grid-template-rows:auto auto minmax(0,1fr)}
-  .grid{overflow:auto;touch-action:pan-y;grid-template-columns:1fr;grid-template-rows:none;grid-auto-rows:auto;
+@media (max-width:820px){ .mode-chip{display:none} }
+@media (max-width:640px){ .tool{width:35px} .tools{gap:2px} .tsep{margin:0 2px} .modes .tool{width:36px} }
+/* phone: one column, the page scrolls */
+@media (max-width:540px){
+  .app{padding-inline:10px}
+  .grid{grid-template-columns:1fr;grid-template-rows:none;grid-auto-rows:auto;
     grid-template-areas:"wake" "goal" "morning" "today" "important" "tomorrow"}
-  .grid .sheet{min-height:calc(var(--lh) * 4)}
-  .grid .sec[data-id="today"] .sheet{min-height:calc(var(--lh) * 7)}
-  .mode-chip{display:none}
+  .sec[data-id="goal"] .sheet,.sec[data-id="important"] .sheet{min-height:calc(var(--lh) * 3 + 4px)}
+  .sec[data-id="morning"] .sheet,.sec[data-id="tomorrow"] .sheet{min-height:calc(var(--lh) * 4 + 4px)}
+  .sec[data-id="today"] .sheet{min-height:calc(var(--lh) * 8 + 4px)}
+  .tools{flex-wrap:wrap;row-gap:4px}
+  .tools .tsep,.tools .flex{display:none}
+  .brk{display:block;flex-basis:100%;height:0}
+  .t-hist{margin-left:auto}
+  .menu-m{display:grid}
+  .menu-d{display:none}
+  .d-num{font-size:28px}
+  .date{gap:8px;padding:2px 2px}
+  .d-meta span{display:none}
+  .nav{width:30px}
+  .today-btn{margin-left:2px;padding:0 10px}
+  .prog svg{width:32px;height:32px}
+  .prog-t span{display:none}
+  .wake .sec-h{flex-wrap:wrap}
+  .wake .sec-h .x{margin-left:0;width:100%;justify-content:space-between}
+  .tbox{min-width:0;flex:1 1 40%}
+  .tbox input{font-size:19px}
+  .wake-btn{white-space:nowrap}
 }
-@media (max-width:640px){ .mode-chip{display:none} .tool{width:36px} }
 
 .sec{background:var(--card);border:1px solid var(--line);border-radius:16px;display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;box-shadow:0 1px 2px rgba(31,36,33,.04)}
 .sec-h{display:flex;align-items:baseline;gap:8px;padding:10px 14px 6px;flex:none;touch-action:pan-y}
@@ -119,7 +148,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   background-image:linear-gradient(to bottom,transparent calc(var(--lh) - 1px),var(--rule) calc(var(--lh) - 1px));
   background-size:100% var(--lh);background-repeat:repeat-y;
 }
-.sheet canvas{position:absolute;top:0;bottom:0;right:0;left:var(--gw);width:calc(100% - var(--gw));height:100%;touch-action:none}
+.sheet{min-height:calc(var(--lh) * 3 + 4px)}
+.sheet canvas{position:absolute;top:0;bottom:0;right:0;left:var(--gw);width:calc(100% - var(--gw));height:100%;touch-action:pan-x pan-y pinch-zoom}
+body.m-pen .sheet canvas{touch-action:pinch-zoom}
+.texts{position:absolute;inset:0 0 0 var(--gw);pointer-events:none}
+.texts input{position:absolute;left:0;right:6px;height:calc(var(--lh) - 1px);width:calc(100% - 6px);padding:6px 4px 0;border:0;border-radius:0;background:transparent;
+  font:500 16px/1.2 var(--f-sans);color:#284a7a;-webkit-user-select:text;user-select:text;outline:none;caret-color:var(--accent)}
+.texts input.done{color:var(--faint);text-decoration:line-through}
+body.m-key .texts{pointer-events:auto}
+body.m-key .texts input:focus{background:rgba(47,93,80,.06)}
 .sec[data-kind="goal"]{--gw:16px}
 .sec[data-kind="goal"] .sheet::before{content:"";position:absolute;left:14px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--accent);opacity:.35}
 .gutter{position:absolute;left:0;top:0;width:var(--gw);height:100%}
@@ -186,6 +223,7 @@ dialog::backdrop{background:rgba(31,36,33,.32)}
 </head>
 <body>
 <div class="app">
+ <div class="bar">
   <header class="top">
     <div class="date-wrap">
       <button class="nav" id="prev" aria-label="이전 날"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
@@ -204,7 +242,20 @@ dialog::backdrop{background:rgba(31,36,33,.32)}
   </header>
 
   <nav class="tools" aria-label="필기 도구">
-    <div class="tgroup">
+    <div class="modes" role="group" aria-label="입력 모드">
+      <button class="tool" data-mode="move" aria-label="이동·확대 모드"><svg viewBox="0 0 24 24"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8a8 8 0 0 0 16 0v-2a2 2 0 0 0-4 0"/></svg></button>
+      <button class="tool" data-mode="pen" aria-label="필기 모드"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+      <button class="tool" data-mode="key" aria-label="키보드 모드"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg></button>
+    </div>
+    <span class="tsep"></span>
+    <div class="tgroup t-hist">
+      <button class="tool" id="undo" aria-label="실행 취소" disabled><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+      <button class="tool" id="redo" aria-label="다시 실행" disabled><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+    </div>
+    <button class="tool menu-m" id="menuBtnM" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
+    <span class="tsep"></span>
+    <span class="brk"></span>
+    <div class="tgroup pen-only">
       <button class="tool sw" data-color="ink" aria-label="검정 펜"><i style="--c:#1f2421"></i></button>
       <button class="tool sw" data-color="navy" aria-label="남색 펜"><i style="--c:#284a7a"></i></button>
       <button class="tool sw" data-color="red" aria-label="빨간 펜"><i style="--c:#b5443a"></i></button>
@@ -212,20 +263,16 @@ dialog::backdrop{background:rgba(31,36,33,.32)}
       <button class="tool" id="tEr" aria-label="지우개"><svg viewBox="0 0 24 24"><path d="M8 20h12"/><path d="M4.6 15.4 13.4 6.6a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L10 20H8.8z"/><path d="m9 11 4.6 4.6"/></svg></button>
     </div>
     <span class="tsep"></span>
-    <div class="tgroup">
+    <div class="tgroup pen-only">
       <button class="tool sz" data-size="0" aria-label="가는 펜"><i style="--d:4px"></i></button>
       <button class="tool sz" data-size="1" aria-label="보통 펜"><i style="--d:7px"></i></button>
       <button class="tool sz" data-size="2" aria-label="굵은 펜"><i style="--d:10px"></i></button>
     </div>
-    <span class="tsep"></span>
-    <div class="tgroup">
-      <button class="tool" id="undo" aria-label="실행 취소" disabled><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
-      <button class="tool" id="redo" aria-label="다시 실행" disabled><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
-    </div>
     <span class="flex"></span>
     <span class="mode-chip" id="modeChip"></span>
-    <button class="tool" id="menuBtn" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
+    <button class="tool menu-d" id="menuBtn" aria-label="설정"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg></button>
   </nav>
+ </div>
 
   <main class="grid" id="grid">
     <section class="sec wake" style="grid-area:wake">
@@ -265,7 +312,9 @@ dialog::backdrop{background:rgba(31,36,33,.32)}
     <div>
       <h4>사용법</h4>
       <ol class="howto">
-        <li>각 칸의 줄 위에 <b>펜으로 바로</b> 쓰세요.</li>
+        <li>도구 막대 왼쪽에서 모드를 골라요. <b>✋ 이동</b>: 스크롤·확대 / <b>✎ 필기</b>: 펜으로 쓰기 / <b>⌨ 키보드</b>: 줄을 눌러 글자 입력.</li>
+        <li>어느 모드에서든 <b>두 손가락</b>으로 벌리면 확대, 오므리면 축소돼요.</li>
+        <li>키보드 모드에서 <b>엔터</b>를 누르면 다음 줄로 넘어가요.</li>
         <li>왼쪽 네모를 톡 누를 때마다 <b>완료(✓)</b>, <b>미룸(→)</b>, 빈칸 순으로 바뀌어요. 중요한 일은 번호를 누르면 완료돼요.</li>
         <li>펜 옆 버튼(지우개 버튼)이나 <b>지우개 도구</b>로 획을 문지르면 지워져요.</li>
         <li>‘당일 할일’의 <b>어제 적은 일</b>을 누르면 전날 ‘다음날 할일’을 볼 수 있어요.</li>
@@ -318,7 +367,8 @@ function store(k, v){
 }
 
 /* ---------- settings & day data ---------- */
-const S = Object.assign({input:'auto', penSeen:false, tool:'pen', color:'ink', size:1, target:'05:00'}, load('settings') || {});
+const S = Object.assign({input:'auto', penSeen:false, tool:'pen', color:'ink', size:1, target:'05:00',
+  mode:Math.min(screen.width, screen.height) < 540 ? 'key' : 'pen'}, load('settings') || {});
 const saveSettings = () => store('settings', S);
 
 let cur = today0();
@@ -327,7 +377,7 @@ let undoS = [], redoS = [];
 
 function emptyDay(){
   const s = {};
-  SECS.forEach(x => s[x.id] = {k:[], m:{}});
+  SECS.forEach(x => s[x.id] = {k:[], m:{}, t:{}});
   return {wake:{target:S.target, actual:''}, s};
 }
 function loadDay(key){
@@ -335,12 +385,12 @@ function loadDay(key){
   if (!d) return e;
   d.wake = Object.assign(e.wake, d.wake || {});
   d.s = d.s || {};
-  SECS.forEach(x => d.s[x.id] = Object.assign({k:[], m:{}}, d.s[x.id] || {}));
+  SECS.forEach(x => d.s[x.id] = Object.assign({k:[], m:{}, t:{}}, d.s[x.id] || {}));
   return d;
 }
 function isEmpty(d){
   if (d.wake.actual) return false;
-  return SECS.every(x => !d.s[x.id].k.length && !Object.keys(d.s[x.id].m).length);
+  return SECS.every(x => !d.s[x.id].k.length && !Object.keys(d.s[x.id].m).length && !Object.keys(d.s[x.id].t).length);
 }
 let saveT;
 function save(){ clearTimeout(saveT); saveT = setTimeout(saveNow, 300); }
@@ -364,12 +414,12 @@ SECS.forEach(def => {
   el.dataset.kind = def.kind;
   el.style.gridArea = def.id;
   el.innerHTML = `<header class="sec-h"><h2>${def.title}</h2><span class="en">${def.en}</span><span class="x"></span></header>
-    <div class="sheet"><div class="gutter"></div><canvas></canvas><div class="dims"></div></div>`;
+    <div class="sheet"><div class="gutter"></div><canvas></canvas><div class="dims"></div><div class="texts"></div></div>`;
   grid.appendChild(el);
   const canvas = el.querySelector('canvas');
   const cache = document.createElement('canvas');
   const sec = {def, id:def.id, el, canvas, ctx:canvas.getContext('2d'), cache, cctx:cache.getContext('2d'),
-    gutter:el.querySelector('.gutter'), dims:el.querySelector('.dims'), W:1, H:1, n:1};
+    gutter:el.querySelector('.gutter'), dims:el.querySelector('.dims'), texts:el.querySelector('.texts'), W:1, H:1, n:1};
   secs[def.id] = sec;
   bindCanvas(sec);
   sec.gutter.addEventListener('click', e => {
@@ -380,6 +430,17 @@ SECS.forEach(def => {
     if (next) m[i] = next; else delete m[i];
     if (next === 1 && navigator.vibrate) navigator.vibrate(8);
     renderMarks(sec); updateProgress(); save();
+  });
+  sec.texts.addEventListener('input', e => {
+    const i = +e.target.dataset.i, t = day.s[def.id].t, v = e.target.value;
+    if (v) t[i] = v; else delete t[i];
+    renderMarks(sec); updateProgress(); save();
+  });
+  sec.texts.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    const all = [...document.querySelectorAll('.texts input')], i = all.indexOf(e.target);
+    if (all[i + 1]) all[i + 1].focus(); else e.target.blur();
   });
   new ResizeObserver(() => layout(sec)).observe(canvas);
 });
@@ -423,8 +484,8 @@ function tail(c, s, p, W){
   c.beginPath(); c.moveTo((x0 + x1) / 2, (y0 + y1) / 2); c.lineTo(x1, y1); c.stroke();
 }
 function penStyle(c, s){ c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = c.fillStyle = s.c; }
-function drawStroke(c, s, W){
-  const p = s.p, n = p.length / 3;
+function drawStroke(c, s, sheetW){
+  const p = s.p, n = p.length / 3, W = s.u ? 1 : sheetW;
   if (!n) return;
   if (s.t === 'hl') {
     c.save();
@@ -468,20 +529,21 @@ function render(sec){
   renderMarks(sec);
 }
 
-/* lines that carry ink — used for the progress count and to emphasise their check boxes */
+/* lines that carry ink or typed text — used for the progress count and to emphasise their check boxes */
 function inkLines(sec){
   const set = new Set();
   for (const s of day.s[sec.id].k) {
     if (s.t === 'hl') continue;
     let lo = Infinity, hi = -Infinity;
     for (let i = 1; i < s.p.length; i += 3) { if (s.p[i] < lo) lo = s.p[i]; if (s.p[i] > hi) hi = s.p[i]; }
-    set.add(Math.floor((lo + hi) / 2 * sec.W / LH));
+    set.add(Math.floor((lo + hi) / 2 * (s.u ? 1 : sec.W) / LH));
   }
+  Object.keys(day.s[sec.id].t).forEach(i => set.add(+i));
   return set;
 }
 function renderMarks(sec){
   const {def} = sec, m = day.s[sec.id].m;
-  if (def.kind === 'goal') { sec.gutter.innerHTML = ''; return; }
+  if (def.kind === 'goal') { sec.gutter.innerHTML = ''; renderTexts(sec); return; }
   const ink = inkLines(sec);
   let g = '', d = '';
   for (let i = 0; i < sec.n; i++) {
@@ -493,6 +555,24 @@ function renderMarks(sec){
   }
   sec.gutter.innerHTML = g;
   sec.dims.innerHTML = d;
+  renderTexts(sec);
+}
+function renderTexts(sec){
+  const box = sec.texts, {t, m} = day.s[sec.id], key = S.mode === 'key';
+  while (box.children.length < sec.n) {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.autocomplete = 'off'; inp.enterKeyHint = 'next'; inp.dataset.i = box.children.length;
+    box.appendChild(inp);
+  }
+  while (box.children.length > sec.n) box.lastChild.remove();
+  [...box.children].forEach((inp, i) => {
+    inp.style.top = i * LH + 'px';
+    if (document.activeElement !== inp) inp.value = t[i] || '';
+    inp.classList.toggle('done', m[i] === 1 && sec.def.kind !== 'goal');
+    inp.tabIndex = key ? 0 : -1;
+    inp.readOnly = !key;
+    inp.setAttribute('aria-label', `${sec.def.title} ${i + 1}번째 줄`);
+  });
 }
 function updateProgress(){
   let total = 0, done = 0;
@@ -513,6 +593,7 @@ let act = null;      // the one pointer currently drawing or erasing
 let frame = 0;
 
 function accept(e){
+  if (S.mode !== 'pen') return false;
   if (e.pointerType === 'pen') {
     if (!S.penSeen) { S.penSeen = true; saveSettings(); renderMode(); }
     return true;
@@ -533,7 +614,9 @@ function bindCanvas(sec){
     if (!accept(e)) return;
     if (act) {
       // a palm or finger touched first and then the pen landed: drop the touch stroke, keep the pen
-      if (act.ptype === 'touch' && e.pointerType === 'pen') cancelAct(); else return;
+      // a second finger means a pinch/scroll gesture, not writing
+      if (act.ptype === 'touch' && !act.erase) cancelAct();
+      if (act || e.pointerType !== 'pen') return;
     }
     e.preventDefault();
     try { cv.setPointerCapture(e.pointerId); } catch (_) {}
@@ -542,7 +625,7 @@ function bindCanvas(sec){
     if (act.erase) eraseAt(e);
     else {
       const hl = S.tool === 'hl';
-      act.stroke = {t:hl ? 'hl' : 'pen', c:hl ? HL_COLOR : PENS[S.color], w:(hl ? HL_W : PEN_W)[S.size] / sec.W, p:[]};
+      act.stroke = {t:hl ? 'hl' : 'pen', c:hl ? HL_COLOR : PENS[S.color], w:(hl ? HL_W : PEN_W)[S.size], u:1, p:[]};
       penStyle(sec.ctx, act.stroke);
       addPoint(e);
     }
@@ -555,13 +638,14 @@ function bindCanvas(sec){
   };
   cv.addEventListener('pointermove', move);
   cv.addEventListener('pointerup', e => { if (act && e.pointerId === act.id) finish(); });
-  cv.addEventListener('pointercancel', e => { if (act && e.pointerId === act.id) finish(); });
+  // the browser took the touch for a pinch-zoom: drop the half-written stroke
+  cv.addEventListener('pointercancel', e => { if (act && e.pointerId === act.id) (act.ptype === 'touch' && !act.erase ? cancelAct() : finish()); });
   cv.addEventListener('lostpointercapture', e => { if (act && e.pointerId === act.id) finish(); });
 }
 
 function addPoint(ev){
-  const {sec, rect, stroke} = act, W = sec.W, p = stroke.p;
-  const x = (ev.clientX - rect.left) / W, y = (ev.clientY - rect.top) / W;
+  const {sec, rect, stroke} = act, p = stroke.p;
+  const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
   let pr = .5;
   if (ev.pointerType === 'pen') {
     pr = ev.pressure > 0 ? ev.pressure : act.lastPr;
@@ -570,7 +654,7 @@ function addPoint(ev){
   }
   const n = p.length / 3;
   if (n) {
-    const dx = (x - p[(n-1)*3]) * W, dy = (y - p[(n-1)*3+1]) * W;
+    const dx = x - p[(n-1)*3], dy = y - p[(n-1)*3+1];
     if (dx * dx + dy * dy < .36) return;
   }
   p.push(x, y, pr);
@@ -580,21 +664,22 @@ function addPoint(ev){
       if (!act || !act.stroke) return;
       blit(act.sec); drawStroke(act.sec.ctx, act.stroke, act.sec.W);
     });
-  } else if (n >= 1) piece(sec.ctx, stroke, p, n, W);
+  } else if (n >= 1) piece(sec.ctx, stroke, p, n, 1);
 }
 
 function eraseAt(ev){
-  const {sec, rect} = act, W = sec.W;
-  const x = (ev.clientX - rect.left) / W, y = (ev.clientY - rect.top) / W, r = 12 / W;
+  const {sec, rect} = act;
+  const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
   const k = day.s[sec.id].k;
   let hit = false;
   for (let j = k.length - 1; j >= 0; j--) {
-    if (hitStroke(k[j], x, y, r)) { act.erased.push({i:j, s:k[j]}); k.splice(j, 1); hit = true; }
+    if (hitStroke(k[j], x, y, 12, sec.W)) { act.erased.push({i:j, s:k[j]}); k.splice(j, 1); hit = true; }
   }
   if (hit) render(sec);
 }
-function hitStroke(s, x, y, r){
-  const p = s.p, n = p.length / 3, rr = r + s.w / 2, r2 = rr * rr;
+function hitStroke(s, px, py, pr, sheetW){
+  const sc = s.u ? 1 : sheetW, x = px / sc, y = py / sc;
+  const p = s.p, n = p.length / 3, rr = pr / sc + s.w / 2, r2 = rr * rr;
   for (let i = 0; i < n; i++) {
     const ax = p[i*3], ay = p[i*3+1];
     if (i === n - 1) { if ((x - ax) ** 2 + (y - ay) ** 2 <= r2) return true; continue; }
@@ -615,7 +700,7 @@ function finish(){
   }
   const s = a.stroke;
   if (!s.p.length) return;
-  s.p = s.p.map((v, i) => i % 3 === 2 ? Math.round(v * 100) / 100 : Math.round(v * 1e4) / 1e4);
+  s.p = s.p.map((v, i) => Math.round(v * (i % 3 === 2 ? 100 : 10)) / (i % 3 === 2 ? 100 : 10));
   day.s[sec.id].k.push(s);
   pushUndo({t:'add', id:sec.id, s});
   afterChange(sec);
@@ -651,11 +736,24 @@ function renderTools(){
   $('#tHl').setAttribute('aria-pressed', S.tool === 'hl');
   $('#tEr').setAttribute('aria-pressed', S.tool === 'eraser');
   document.querySelectorAll('.sz').forEach(b => b.setAttribute('aria-pressed', +b.dataset.size === S.size));
+  document.querySelectorAll('.modes .tool').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === S.mode));
+  document.body.className = 'm-' + S.mode;
 }
-document.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => { S.tool = 'pen'; S.color = b.dataset.color; saveSettings(); renderTools(); }));
-document.querySelectorAll('.sz').forEach(b => b.addEventListener('click', () => { S.size = +b.dataset.size; if (S.tool === 'eraser') S.tool = 'pen'; saveSettings(); renderTools(); }));
-$('#tHl').addEventListener('click', () => { S.tool = S.tool === 'hl' ? 'pen' : 'hl'; saveSettings(); renderTools(); });
-$('#tEr').addEventListener('click', () => { S.tool = S.tool === 'eraser' ? 'pen' : 'eraser'; saveSettings(); renderTools(); });
+// picking any pen tool also switches to 필기 mode
+const setTool = fn => { fn(); setMode('pen'); };
+function setMode(m){
+  if (m !== 'key' && document.activeElement && document.activeElement.closest('.texts')) document.activeElement.blur();
+  S.mode = m; saveSettings(); renderTools();
+  Object.values(secs).forEach(renderTexts);
+}
+document.querySelectorAll('.modes .tool').forEach(b => b.addEventListener('click', () => {
+  setMode(b.dataset.mode);
+  toast({move:'이동 모드 · 스크롤하고 두 손가락으로 확대·축소해요', pen:'필기 모드 · 펜으로 줄 위에 쓰세요', key:'키보드 모드 · 줄을 누르면 입력할 수 있어요'}[S.mode]);
+}));
+document.querySelectorAll('.sw').forEach(b => b.addEventListener('click', () => setTool(() => { S.tool = 'pen'; S.color = b.dataset.color; })));
+document.querySelectorAll('.sz').forEach(b => b.addEventListener('click', () => setTool(() => { S.size = +b.dataset.size; if (S.tool === 'eraser') S.tool = 'pen'; })));
+$('#tHl').addEventListener('click', () => setTool(() => { S.tool = S.tool === 'hl' ? 'pen' : 'hl'; }));
+$('#tEr').addEventListener('click', () => setTool(() => { S.tool = S.tool === 'eraser' ? 'pen' : 'eraser'; }));
 
 function renderMode(){
   const pen = S.input === 'pen' || (S.input === 'auto' && S.penSeen);
@@ -687,6 +785,7 @@ function renderHeader(){
 }
 function go(d){
   if (act) return;
+  if (document.activeElement && document.activeElement.closest('.texts')) document.activeElement.blur();
   saveNow();
   cur = new Date(d); cur.setHours(0, 0, 0, 0);
   day = loadDay(ymd(cur));
@@ -699,7 +798,8 @@ function renderAll(){
   renderWake();
   updateProgress();
   const y = load(ymd(addDays(cur, -1)));
-  ydBtn.hidden = !(y && y.s && y.s.tomorrow && y.s.tomorrow.k && y.s.tomorrow.k.length);
+  const yt = y && y.s && y.s.tomorrow;
+  ydBtn.hidden = !(yt && ((yt.k && yt.k.length) || (yt.t && Object.keys(yt.t).length)));
 }
 $('#prev').addEventListener('click', () => go(addDays(cur, -1)));
 $('#next').addEventListener('click', () => go(addDays(cur, 1)));
@@ -759,21 +859,25 @@ $('#wNow').addEventListener('click', () => {
 
 /* ---------- 어제 적은 일 ---------- */
 function showYesterday(){
-  const y = loadDay(ymd(addDays(cur, -1))), k = y.s.tomorrow.k;
+  const y = loadDay(ymd(addDays(cur, -1))), {k, t} = y.s.tomorrow;
   const W = secs.tomorrow.W || 300;
   let maxY = 0;
-  k.forEach(s => { for (let i = 1; i < s.p.length; i += 3) maxY = Math.max(maxY, s.p[i] * W); });
+  k.forEach(s => { for (let i = 1; i < s.p.length; i += 3) maxY = Math.max(maxY, s.p[i] * (s.u ? 1 : W)); });
+  Object.keys(t).forEach(i => maxY = Math.max(maxY, (+i + 1) * LH - 8));
   const H = Math.max(LH * 3, Math.ceil((maxY + 8) / LH) * LH);
   const cv = $('#ydCanvas'), r = dpr();
   cv.width = Math.round(W * r); cv.height = Math.round(H * r);
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   $('#ydSheet').style.width = W + 'px';
-  paint(cv.getContext('2d'), cv, k, W);
+  const c = cv.getContext('2d');
+  paint(c, cv, k, W);
+  c.font = '500 16px "Noto Sans KR", sans-serif'; c.fillStyle = '#284a7a';
+  Object.entries(t).forEach(([i, v]) => c.fillText(v, 4, +i * LH + 26));
   $('#yd').showModal();
 }
 
 /* ---------- menu ---------- */
-$('#menuBtn').addEventListener('click', () => { renderMode(); $('#menu').showModal(); });
+['#menuBtn', '#menuBtnM'].forEach(id => $(id).addEventListener('click', () => { renderMode(); $('#menu').showModal(); }));
 document.querySelectorAll('dialog').forEach(d => {
   d.addEventListener('click', e => { if (e.target === d || e.target.closest('[data-close]')) d.close(); });
 });
@@ -834,7 +938,6 @@ document.addEventListener('visibilitychange', () => {
   if (t !== shownToday) { const wasToday = ymd(cur) === shownToday; shownToday = t; if (wasToday) go(today0()); else renderHeader(); }
 });
 window.addEventListener('pagehide', saveNow);
-document.addEventListener('gesturestart', e => e.preventDefault());
 
 day = loadDay(ymd(cur));
 renderTools(); renderMode(); renderAll();
